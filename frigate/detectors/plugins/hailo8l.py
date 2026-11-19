@@ -85,6 +85,8 @@ class HailoAsyncInference:
         input_type: str | None = None,
         output_type: dict[str, str] | None = None,
         send_original_frame: bool = False,
+        multi_process_service: bool = False,
+        group_id: str = "SHARED",
     ) -> None:
         # when importing hailo it activates the driver
         # which leaves processes running even though it may not be used.
@@ -103,6 +105,10 @@ class HailoAsyncInference:
 
         params = VDevice.create_params()
         params.scheduling_algorithm = HailoSchedulingAlgorithm.ROUND_ROBIN
+        params.multi_process_service = multi_process_service
+
+        if multi_process_service:
+            params.group_id = group_id
 
         self.hef = HEF(hef_path)
         self.target = VDevice(params)
@@ -253,6 +259,8 @@ class HailoDetector(DetectionApi):
                 self.input_store,
                 self.response_store,
                 self.batch_size,
+                multi_process_service=detector_config.multi_process_service,
+                group_id=detector_config.group_id,
             )
             self.input_shape = self.inference_engine.get_input_shape()
             logger.debug(f"[INIT] Model input shape: {self.input_shape}")
@@ -420,4 +428,23 @@ class HailoDetectorConfig(BaseDetectorConfig):
         default="PCIe",
         title="Device Type",
         description="The device to use for Hailo inference (e.g. 'PCIe', 'M.2').",
+    )
+
+    multi_process_service: bool = Field(
+        default=False,
+        title="Multi-Process Service",
+        description=(
+            "Enable sharing the Hailo device through the "
+            "HailoRT multi-process service."
+        ),
+    )
+
+    group_id: str = Field(
+        default="SHARED",
+        min_length=1,
+        title="VDevice Group ID",
+        description=(
+            "Virtual device group used when multi-process "
+            "inference is enabled."
+        ),
     )

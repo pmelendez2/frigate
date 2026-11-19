@@ -1,0 +1,18 @@
+title = "Frigate local development security checks"
+
+[extend]
+useDefault = true
+
+# Ignore only the verified public Git revision used to build
+# nginx-secure-token-module. Do not exclude the entire file.
+[[allowlists]]
+description = "Pinned public secure-token source commit"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+paths = [
+    '''(^|/)docker/main/build_nginx\.sh$'''
+]
+regexes = [
+    '''SECURE_TOKEN_MODULE_REF="3c34bd46947b337703c9e009c3ca212b6162a070"'''
+]
