@@ -68,6 +68,8 @@ jobs:
         run: npx playwright install chromium --with-deps
         working-directory: ./web
       - name: Build web for E2E
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
         run: npm run e2e:build
         working-directory: ./web
       - name: Run E2E tests
