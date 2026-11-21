@@ -434,8 +434,7 @@ class HailoDetectorConfig(BaseDetectorConfig):
         default=False,
         title="Multi-Process Service",
         description=(
-            "Enable sharing the Hailo device through the "
-            "HailoRT multi-process service."
+            "Enable sharing the Hailo device through the HailoRT multi-process service."
         ),
     )
 
@@ -444,7 +443,6 @@ class HailoDetectorConfig(BaseDetectorConfig):
         min_length=1,
         title="VDevice Group ID",
         description=(
-            "Virtual device group used when multi-process "
-            "inference is enabled."
+            "Virtual device group used when multi-process inference is enabled."
         ),
     )
