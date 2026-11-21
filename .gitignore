@@ -28,3 +28,10 @@ core
 docs/src/components/DockerComposeGenerator/config/devices.ts
 docs/src/components/DockerComposeGenerator/config/hardware.ts
 docs/src/components/DockerComposeGenerator/config/ports.ts
+
+# Local Hailo-8 / Frigate build and validation artifacts
+*.zip
+*.log
+*.bak.*
+/.frigate-build/
+/quality-results/
