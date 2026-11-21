@@ -20,6 +20,28 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+      - name: Verify PR commit signatures
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          unsigned="$(
+            gh api --paginate \
+              "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/commits?per_page=100" \
+              --jq '.[] | select(.commit.verification.verified != true) | .sha'
+          )"
+
+          if [[ -n "$unsigned" ]]; then
+            echo "FAIL: Unverified PR commits:"
+            printf '%s\n' "$unsigned"
+            exit 1
+          fi
+
+          echo "PASS: All PR commits have verified signatures"
       - name: Check shell scripts
         run: |
           bash -n scripts/build-frigate-local.sh \
@@ -48,6 +70,9 @@ jobs:
         run: |
           python3 scripts/check-documentation.py
           python3 scripts/sync-release-docs.py --check
+          python3 tools/update-hailo8-component-guide.py --check
+          python3 -m unittest discover \
+            -s tests -p 'test_hailo8_component_guide.py' -v
           python3 -m unittest discover \
             -s tests -p 'test_sync_release_docs.py' -v
           python3 scripts/check-public-content.py

@@ -9,4 +9,5 @@ cd "$root"
 
 bash scripts/check-frigate-changes.sh --staged
 python3 scripts/check-documentation.py
+python3 tools/update-hailo8-component-guide.py --check
 python3 scripts/check-public-content.py

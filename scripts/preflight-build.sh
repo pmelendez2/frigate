@@ -10,6 +10,9 @@ cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 echo '=== Public-content and documentation checks ==='
 python3 scripts/check-documentation.py
 python3 scripts/sync-release-docs.py --check
+python3 tools/update-hailo8-component-guide.py --check
+python3 -m unittest discover \
+    -s tests -p 'test_hailo8_component_guide.py' -v
 python3 scripts/check-public-content.py
 
 echo '=== Gitleaks: changes since upstream base ==='
