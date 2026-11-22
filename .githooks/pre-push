@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# AI-assisted: OpenAI ChatGPT; human verification required.
+
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+
+bash scripts/preflight-build.sh
+
+if [[ ! -r /dev/tty ]]; then
+    echo 'Push blocked: an interactive terminal is required' >&2
+    exit 1
+fi
+
+printf 'Publish reviewed source? Type PUBLISH: ' > /dev/tty
+IFS= read -r answer < /dev/tty
+
+if [[ "$answer" != PUBLISH ]]; then
+    echo 'Push cancelled' >&2
+    exit 1
+fi

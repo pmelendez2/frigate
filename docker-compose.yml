@@ -14,6 +14,8 @@ services:
       dockerfile: docker/main/Dockerfile
       # Use target devcontainer-trt for TensorRT dev
       target: devcontainer
+      additional_contexts:
+        hailort-src: ${HAILORT_SOURCE_DIR:-./.hailort-src}
       cache_from:
         - ghcr.io/blakeblackshear/frigate:cache-amd64
     ## Uncomment this block for nvidia gpu support

@@ -44,6 +44,8 @@ jobs:
       - run: npm install
         working-directory: ./web
       - name: Build web
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
         run: npm run build
         working-directory: ./web
       # - name: Test
@@ -52,7 +54,7 @@ jobs:
 
   web_e2e:
     name: Web - E2E Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
         with:
@@ -66,6 +68,8 @@ jobs:
         run: npx playwright install chromium --with-deps
         working-directory: ./web
       - name: Build web for E2E
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
         run: npm run e2e:build
         working-directory: ./web
       - name: Run E2E tests
@@ -117,6 +121,14 @@ jobs:
           node-version: 20.x
       - name: Install devcontainer cli
         run: npm install --global @devcontainers/cli
+      - name: Export HailoRT build context
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/prepare-hailort-source.sh \
+            "$RUNNER_TEMP/hailort-src"
+          echo "HAILORT_SOURCE_DIR=$RUNNER_TEMP/hailort-src" \
+            >> "$GITHUB_ENV"
       - name: Build devcontainer
         env:
           DOCKER_BUILDKIT: "1"

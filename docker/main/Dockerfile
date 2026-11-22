@@ -201,8 +201,11 @@ RUN pip3 wheel --wheel-dir=/wheels -r /requirements-wheels.txt && \
     fi
 
 # Install HailoRT & Wheels
-RUN --mount=type=bind,source=docker/main/install_hailort.sh,target=/deps/install_hailort.sh \
-    /deps/install_hailort.sh
+# Build HailoRT 4.24.0 with MPS support.
+COPY --from=hailort-src / /deps/hailort-src
+
+RUN --mount=type=bind,source=docker/main/build_hailort_mps.sh,target=/deps/build_hailort_mps.sh \
+    /bin/bash /deps/build_hailort_mps.sh
 
 # Collect deps in a single layer
 FROM scratch AS deps-rootfs
@@ -215,6 +218,7 @@ COPY --from=tempio /rootfs/ /
 COPY --from=s6-overlay /rootfs/ /
 COPY --from=models /rootfs/ /
 COPY --from=wheels /rootfs/ /
+COPY --from=wheels /usr/local/bin/hailortcli /usr/local/bin/hailortcli
 COPY docker/main/rootfs/ /
 
 
@@ -346,7 +350,7 @@ COPY web/package.json web/package-lock.json ./
 RUN npm install
 
 COPY web/ ./
-RUN npm run build \
+RUN NODE_OPTIONS=--max-old-space-size=4096 npm run build \
     && mv dist/BASE_PATH/monacoeditorwork/* dist/assets/ \
     && rm -rf dist/BASE_PATH
 
