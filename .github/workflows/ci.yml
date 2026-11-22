@@ -58,8 +58,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git merge-base --is-ancestor v0.18.2 HEAD
-          bash scripts/check-frigate-changes.sh --range v0.18.2
+          git merge-base --is-ancestor v0.18.3 HEAD
+          bash scripts/check-frigate-changes.sh --range v0.18.3
           bash scripts/check-frigate-changes.sh --worktree
           python3 scripts/check-public-content.py
       - name: Unit-test fork privacy checker
@@ -80,7 +80,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(cat release/VERSION)" = 0.18.2-hailort-4.24.0
+          test "$(cat release/VERSION)" = 0.18.3-hailort-4.24.0
           grep -Fq 'COPY --from=hailort-src' docker/main/Dockerfile
           grep -Fq -- '-DHAILO_BUILD_SERVICE=ON' \
             docker/main/build_hailort_mps.sh
