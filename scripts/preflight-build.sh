@@ -16,7 +16,7 @@ python3 -m unittest discover \
 python3 scripts/check-public-content.py
 
 echo '=== Gitleaks: changes since upstream base ==='
-bash scripts/check-frigate-changes.sh --range v0.18.2
+bash scripts/check-frigate-changes.sh --range v0.18.3
 
 echo '=== Gitleaks: staged changes ==='
 bash scripts/check-frigate-changes.sh --staged

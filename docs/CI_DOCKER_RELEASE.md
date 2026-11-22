@@ -6,10 +6,10 @@
 <!-- BEGIN GENERATED RELEASE METADATA -->
 | Release metadata | Value |
 | --- | --- |
-| Release | `0.18.2-hailort-4.24.0` |
-| Frigate | `0.18.2` |
+| Release | `0.18.3-hailort-4.24.0` |
+| Frigate | `0.18.3` |
 | HailoRT | `4.24.0` |
-| Docker Hub image | `docker.io/pmelendez2/frigate:0.18.2-hailort-4.24.0` |
+| Docker Hub image | `docker.io/pmelendez2/frigate:0.18.3-hailort-4.24.0` |
 | Hailo-8 hardware validation | Raspberry Pi 5 ARM64 only |
 | AMD64 Hailo-8 hardware validation | Not performed |
 <!-- END GENERATED RELEASE METADATA -->
@@ -63,7 +63,7 @@ bash scripts/check-build-context.sh
 `prepare-frigate-version.sh` executes the same security and documentation
 preflight, so a local Docker build cannot skip it. The security checks use
 Gitleaks' default rules plus the narrow exceptions in `.gitleaks.toml`.
-They scan fork changes since the upstream `v0.18.2` base as well as staged,
+They scan fork changes since the upstream `v0.18.3` base as well as staged,
 unstaged, and untracked nonignored files; unrelated upstream history is not
 re-scanned. Failures stop the build. Missing Gitleaks tooling also fails
 closed. CI runners must fetch sufficient Git history for the base comparison.

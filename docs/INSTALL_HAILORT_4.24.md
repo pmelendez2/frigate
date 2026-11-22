@@ -1,15 +1,15 @@
 <!-- SPDX-License-Identifier: MIT -->
 <!-- AI-assisted documentation; maintainer review required. -->
 
-# Install HailoRT 4.24.0 and build custom Frigate 0.18.2
+# Install HailoRT 4.24.0 and build custom Frigate 0.18.3
 
 <!-- BEGIN GENERATED RELEASE METADATA -->
 | Release metadata | Value |
 | --- | --- |
-| Release | `0.18.2-hailort-4.24.0` |
-| Frigate | `0.18.2` |
+| Release | `0.18.3-hailort-4.24.0` |
+| Frigate | `0.18.3` |
 | HailoRT | `4.24.0` |
-| Docker Hub image | `docker.io/pmelendez2/frigate:0.18.2-hailort-4.24.0` |
+| Docker Hub image | `docker.io/pmelendez2/frigate:0.18.3-hailort-4.24.0` |
 | Hailo-8 hardware validation | Raspberry Pi 5 ARM64 only |
 | AMD64 Hailo-8 hardware validation | Not performed |
 <!-- END GENERATED RELEASE METADATA -->
@@ -304,7 +304,7 @@ sudo journalctl -u hailort.service -b --no-pager -n 50
 Avoid running a mixed 4.23/4.24 userspace stack or assuming that a successful
 `hailortcli --version` proves the driver and accelerator are operational.
 
-## 5. Build the custom Frigate 0.18.2 image
+## 5. Build the custom Frigate 0.18.3 image
 
 On the Docker build machine, clone **this fork** or use an existing checkout
 of its release branch. Run all commands from the

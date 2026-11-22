@@ -6,22 +6,22 @@
 <!-- BEGIN GENERATED RELEASE METADATA -->
 | Release metadata | Value |
 | --- | --- |
-| Release | `0.18.2-hailort-4.24.0` |
-| Frigate | `0.18.2` |
+| Release | `0.18.3-hailort-4.24.0` |
+| Frigate | `0.18.3` |
 | HailoRT | `4.24.0` |
-| Docker Hub image | `docker.io/pmelendez2/frigate:0.18.2-hailort-4.24.0` |
+| Docker Hub image | `docker.io/pmelendez2/frigate:0.18.3-hailort-4.24.0` |
 | Hailo-8 hardware validation | Raspberry Pi 5 ARM64 only |
 | AMD64 Hailo-8 hardware validation | Not performed |
 <!-- END GENERATED RELEASE METADATA -->
 
-This repository is a development fork of [Frigate](https://github.com/blakeblackshear/frigate), focused on building **Frigate 0.18.2** for **ARM64 and AMD64** Linux systems with **Hailo-8** inference and **HailoRT 4.24.0**.
+This repository is a development fork of [Frigate](https://github.com/blakeblackshear/frigate), focused on building **Frigate 0.18.3** for **ARM64 and AMD64** Linux systems with **Hailo-8** inference and **HailoRT 4.24.0**.
 
 Frigate is developed and maintained by its upstream project. This fork is not an official Frigate release and is not affiliated with or endorsed by the upstream maintainers or Hailo.
 
 <!-- BEGIN HAILO8 COMPONENT INSTALLATION -->
 ## Install the three Hailo-8 components and understand their roles
 
-This custom build targets **Frigate 0.18.2**, **HailoRT 4.24.0**, and a
+This custom build targets **Frigate 0.18.3**, **HailoRT 4.24.0**, and a
 **full Hailo-8 accelerator on Raspberry Pi 5 (Linux ARM64)**. This is the only
 hardware configuration validated for this fork. AMD64 image builds are
 software checks, **not** evidence of AMD64 Hailo-8 inference compatibility.
@@ -37,7 +37,7 @@ share the device. Here is the actual division of responsibilities:
 | --- | --- | --- |
 | Hailo PCIe driver 4.24.0 and device firmware | Raspberry Pi 5 **host** | Binds the PCIe Hailo-8, exposes the device interface, and loads firmware; a container cannot supply the host kernel module |
 | HailoRT 4.24.0 host runtime and patched MPS service | Raspberry Pi 5 **host** | Owns/schedules the shared device, coordinates clients, and cleans up disconnected clients; **the container image does not replace the running host service** |
-| Frigate 0.18.2 with HailoRT 4.24.0 userspace library/CLI | **Container image** | Runs object detection as an MPS client; connects to the host service through the mounted Unix-domain socket |
+| Frigate 0.18.3 with HailoRT 4.24.0 userspace library/CLI | **Container image** | Runs object detection as an MPS client; connects to the host service through the mounted Unix-domain socket |
 
 ### 1. Install the PCIe driver on the host
 
@@ -112,7 +112,7 @@ runtime and container client must be mutually compatible.
 **After the release is published**, pull the explicit versioned image:
 
 ```bash
-docker pull docker.io/pmelendez2/frigate:0.18.2-hailort-4.24.0
+docker pull docker.io/pmelendez2/frigate:0.18.3-hailort-4.24.0
 ```
 
 This image contains the Frigate application and HailoRT **client** runtime.
@@ -183,7 +183,7 @@ This is a targeted hardware/build fork, not a separate Frigate distribution or a
 ## Source and branch
 
 - Upstream: <https://github.com/blakeblackshear/frigate>
-- Starting version: Frigate `v0.18.2`
+- Starting version: Frigate `v0.18.3`
 - Docker image platforms: `linux/arm64` and `linux/amd64`
 - Hardware validation target: Hailo-8 on Raspberry Pi 5 ARM64
 
@@ -238,7 +238,7 @@ in this order:
 3. Build/install HailoRT userspace 4.24.0 and the MPS service, following
    Hailo's release-specific documentation.
 4. Verify the device, CLI, kernel module and running MPS socket.
-5. Build the custom Frigate 0.18.2 Docker image for `linux/arm64` (or `linux/amd64` for software validation).
+5. Build the custom Frigate 0.18.3 Docker image for `linux/arm64` (or `linux/amd64` for software validation).
 6. Configure device/socket access and enable MPS in Frigate.
 7. Validate real Hailo inference and recheck the driver after kernel updates.
 

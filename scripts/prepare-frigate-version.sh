@@ -34,7 +34,7 @@ path = Path('frigate/version.py')
 spec = importlib.util.spec_from_file_location('frigate_build_version', path)
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
-assert isinstance(module.VERSION, str) and module.VERSION.startswith('0.18.2-')
+assert isinstance(module.VERSION, str) and module.VERSION.startswith('0.18.3-')
 print(f'PASS: Generated Frigate version {module.VERSION}')
 PY
 
