@@ -351,3 +351,13 @@ prerequisites, [release documentation](docs/CI_DOCKER_RELEASE.md) for
 publishing and verification, and [version information](VERSION.md) for
 component compatibility. The [AI usage statement](AIUSAGE.md) and
 [contributor code of conduct](CODE_OF_CONDUCT.md) also apply.
+
+## HailoRT 4.24.0 shared-service setup
+
+To use the HailoRT multi-process service, the Frigate container needs the
+host's `/run/hailort` socket mount and the `HAILORT_SERVICE_ADDRESS`
+container environment variable. Its `hailo8l` detector also needs
+`multi_process_service: true` and an agreed `group_id`. The service address
+alone is not sufficient. See `docs/INSTALL_HAILORT_4.24.md` for a complete
+MPS-specific Compose and detector example. See
+[issue #4](https://github.com/pmelendez2/frigate/issues/4).

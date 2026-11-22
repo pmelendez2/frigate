@@ -110,7 +110,36 @@ layers. It checks both architectures again. Keep the RC and per-architecture
 tags available for audit and rollback. A stable release should remain
 immutable once clients use it.
 
-**Important:** Any change merged into `main` after the tested CI run
-requires a new CI build and hardware test; the publication gate refuses
-artifacts from an older commit. Hardware verification is a maintainer
+**Important:** Application, dependency, build, or test changes merged
+after the tested CI run require a new build and hardware test. Only
+the narrowly scoped release-only exception documented below permits
+reuse of earlier artifacts. Hardware verification is a maintainer
 attestation, not something the GitHub runner can independently prove.
+
+## Release recovery after a publication-workflow-only fix
+
+A CI run records the application image build commit and the exact image ID
+for each architecture. The publication workflow normally requires the run
+commit to equal the current `main` commit. A narrowly scoped exception is
+allowed when the selected CI commit is an ancestor of current `main` and
+**every** intervening changed file is restricted to release tooling or
+documentation. An application, build recipe, dependency, release-version,
+or image-smoke-test change invalidates the old run and requires a new CI
+artifact and hardware test. The workflow fails closed on any other path.
+
+On the RC job, enable ARM64 QEMU userspace emulation before attempting the
+ARM64 software smoke test on the AMD64 publication runner. This does not
+rebuild either retained image. The previously verified physical ARM64
+hardware test remains the release gate; emulation is only a software check.
+
+**Hardware validation:** Build hosts without a physical Hailo-8 can complete
+software CI. RC publication requires an explicit hardware verification
+attestation. A skipped test is not a PASS. Run a concurrent MPS test on a
+physical Hailo-8 host using a second client with `--multi-process-service`
+and the same group ID while Frigate remains active. Verify image identity,
+service and Frigate health, camera activity and inference, and successful
+second-client output. Never hard-code private hostnames or registry URLs
+into repository validation scripts. Portable automatic detection, remote
+selection, and PASS/SKIPPED/FAIL modes remain tracked in
+[issue #5](https://github.com/pmelendez2/frigate/issues/5);
+this release workflow does **not** claim to implement that automation.

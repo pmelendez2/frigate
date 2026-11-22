@@ -415,3 +415,60 @@ Hailo's documentation instead of treating this guide as a replacement**.
 This installation guide targets Hailo-8. Hailo-8L has not been
 validated; Hailo-10 and other Hailo devices are not supported by
 this customization. See [HAILO8.md](../HAILO8.md).
+
+## Docker Compose and HailoRT multi-process service (MPS)
+
+This is a **partial Compose example**, not a complete Frigate deployment.
+The HailoRT service must already be running on the Hailo host. For a
+PCIe Hailo-8 device, configure the device mapping, MPS Unix socket mount,
+and container-side service address:
+
+```yaml
+services:
+  frigate:
+    devices:
+      - /dev/hailo0:/dev/hailo0
+    volumes:
+      - /run/hailort:/run/hailort
+    environment:
+      HAILORT_SERVICE_ADDRESS: "unix:///run/hailort/hailort_uds.sock"
+```
+
+Alternatively, a deployment manager can supply an address for Compose
+substitution:
+
+```yaml
+environment:
+  HAILORT_SERVICE_ADDRESS: "${HAILORT_SVC_ADDR}"
+```
+
+`HAILORT_SVC_ADDR` is an optional **deployment-side** input, not a universal
+Frigate variable. Configure it outside the repository (for example, in
+your deployment manager's environment). The container receives
+`HAILORT_SERVICE_ADDRESS`. The socket path is an example for a host
+running HailoRT's Unix-domain service; confirm it matches your host.
+Ensure the socket's permissions permit the container's HailoRT client to
+connect. Do not publish that socket over a network.
+
+Enable MPS in Frigate's own `config.yml` (or `config.yaml`):
+
+```yaml
+detectors:
+  hailo:
+    type: hailo8l
+    device: PCIe
+    multi_process_service: true
+    group_id: SHARED
+```
+
+The Compose environment variable alone does **not** enable detector MPS.
+The `hailo8l` detector passes `multi_process_service` and `group_id` to
+HailoRT `VDevice` parameters. All sharing clients must use the intended
+group identifier.
+
+For hardware acceptance, verify the running detector's effective `/api/config`
+reports MPS enabled, the host service and socket are active, the real
+Hailo-8 performs inference, and a second MPS client can perform inference
+while Frigate remains healthy. Successful Frigate inference alone does not
+prove concurrent-client support. See `docs/BUILD_ONCE_RELEASE.md` and
+[issue #4](https://github.com/pmelendez2/frigate/issues/4).

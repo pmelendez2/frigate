@@ -143,3 +143,14 @@ tag and Compose configuration for rollback.
 
 See [AIUSAGE.md](../AIUSAGE.md). Human maintainers review generated
 changes and remain responsible for signing and publishing releases.
+
+## Current hardware-gated Docker Hub publication process
+
+For the HailoRT 4.24.0 fork, the authoritative release procedure is
+`docs/BUILD_ONCE_RELEASE.md`: successful `main` CI exports AMD64/ARM64
+images, the ARM64 image is checked on physical Hailo hardware, then
+`docker-publish.yml` is dispatched for RC publication. Stable promotion
+uses a verified signed annotated tag and reuses the RC manifest without
+rebuilding. Do **not** rely on older tag-triggered publication instructions
+for this release. Hardware-aware automation remains tracked in
+[issue #5](https://github.com/pmelendez2/frigate/issues/5).

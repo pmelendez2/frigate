@@ -42,6 +42,7 @@ jobs:
     outputs:
       version: ${{ steps.contract.outputs.version }}
       rc_tag: ${{ steps.contract.outputs.rc_tag }}
+      ci_sha: ${{ steps.contract.outputs.ci_sha }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -66,12 +67,12 @@ jobs:
           version="$(cat release/VERSION)"
           rc_tag="${version}-rc.${RC_NUMBER}"
           run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CI_RUN")"
-          RUN_JSON="$run_json" python3 - <<'PY'
+          ci_sha="$(RUN_JSON="$run_json" python3 - <<'PY'
           import json
           import os
+          import re
           run = json.loads(os.environ['RUN_JSON'])
           expected = {
-              'head_sha': os.environ['GITHUB_SHA'],
               'head_branch': 'main',
               'event': 'push',
               'conclusion': 'success',
@@ -83,8 +84,36 @@ jobs:
                       f'FAIL: CI run {field} is {run.get(field)!r}, '
                       f'expected {value!r}'
                   )
-          print('PASS: CI run is successful main-branch build for this SHA')
+          sha = run.get('head_sha', '')
+          if not re.fullmatch(r'[0-9a-f]{40}', sha):
+              raise SystemExit('FAIL: invalid CI commit SHA')
+          print(sha)
           PY
+          )"
+          git cat-file -e "$ci_sha^{commit}"
+          git merge-base --is-ancestor "$ci_sha" "$GITHUB_SHA" || {
+            echo 'FAIL: CI commit is not an ancestor of release main'
+            exit 1
+          }
+          if [[ "$ci_sha" != "$GITHUB_SHA" ]]; then
+            changes="$(git diff --name-only "$ci_sha" "$GITHUB_SHA")"
+            while IFS= read -r changed; do
+              [[ -z "$changed" ]] && continue
+              case "$changed" in
+                .github/workflows/docker-publish.yml|\
+                docs/INSTALL_HAILORT_4.24.md|\
+                docs/BUILD_ONCE_RELEASE.md|\
+                docs/CI_DOCKER_RELEASE.md|\
+                HAILO8.md)
+                  echo "Allowed release-only change: $changed" ;;
+                *)
+                  echo "FAIL: CI image is stale after change: $changed"
+                  exit 1 ;;
+              esac
+            done <<< "$changes"
+          fi
+          echo "PASS: CI commit $ci_sha is verified for release main"
+          echo "ci_sha=$ci_sha" >> "$GITHUB_OUTPUT"
           if [[ "$STAGE" == rc ]]; then
             [[ "$HARDWARE_VERIFIED" == true ]] || {
               echo 'FAIL: Hardware verification must be explicitly confirmed'
@@ -118,6 +147,9 @@ jobs:
     environment: dockerhub-release
     steps:
       - uses: actions/checkout@v5
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
         with:
@@ -127,6 +159,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CI_RUN: ${{ inputs.ci_run_id }}
+          CI_SHA: ${{ needs.verify.outputs.ci_sha }}
         shell: bash
         run: |
           set -euo pipefail
@@ -138,7 +171,7 @@ jobs:
               --name "frigate-image-$arch" \
               --dir "$dir"
             (cd "$dir" && sha256sum -c image.tar.zst.sha256)
-            grep -Fx "sha=$GITHUB_SHA" "$dir/build.txt"
+            grep -Fx "sha=$CI_SHA" "$dir/build.txt"
             grep -Fx "arch=$arch" "$dir/build.txt"
             grep -Fx "version=$(cat release/VERSION)" "$dir/build.txt"
             zstd -dc "$dir/image.tar.zst" | docker load
