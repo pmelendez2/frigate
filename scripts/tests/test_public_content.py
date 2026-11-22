@@ -36,7 +36,7 @@ class PublicContentTests(unittest.TestCase):
         path.write_text('Upstream example: 192.168.1.20\n')
         run_git(self.root, 'add', '.')
         run_git(self.root, 'commit', '-qm', 'Upstream baseline')
-        run_git(self.root, 'tag', 'v0.18.2')
+        run_git(self.root, 'tag', 'v0.18.3')
 
         spec = importlib.util.spec_from_file_location(
             'frigate_public_content_test', SCRIPT
