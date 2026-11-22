@@ -128,8 +128,10 @@ def documentation_files() -> list[Path]:
         Path(name) for name in FILES
         if Path(name).suffix.lower() in DOC_EXTENSIONS
     }
-    names.update(git_paths('diff', '--name-only', 'v0.18.2...HEAD'))
-    names.update(git_paths('diff', '--name-only', 'HEAD'))
+    # Compare the complete working tree with the current upstream release.
+    # This includes staged and unstaged fork changes, but not upstream-only
+    # documentation introduced by the release merge.
+    names.update(git_paths('diff', '--name-only', 'v0.18.3'))
     names.update(git_paths('ls-files', '--others', '--exclude-standard'))
 
     docs = []
@@ -150,10 +152,28 @@ def check_documentation_paths() -> tuple[list[str], int]:
 
     for path in docs:
         name = path.relative_to(ROOT).as_posix()
+        # Ignore lines already present in the upstream release.
+        # Fork-owned documents absent from upstream are checked in full.
+        upstream = subprocess.run(
+            ['git', '-C', str(ROOT), 'show',
+             f'v0.18.3:{name}'],
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            check=False,
+        )
+        upstream_lines = (
+            set(upstream.stdout.splitlines())
+            if upstream.returncode == 0 else set()
+        )
+
         for number, line in enumerate(
             path.read_text(encoding='utf-8', errors='replace').splitlines(),
             1,
         ):
+            if line in upstream_lines:
+                continue
             for expression, label in DOC_PATH_RULES:
                 if expression.search(line):
                     issues.append(f'{name}:{number}: {label}')
