@@ -136,3 +136,27 @@ jobs:
           bash scripts/test-ci-image.sh \
             frigate:ci-${{ matrix.arch }} \
             ${{ matrix.arch }}
+      - name: Save tested image and build identity
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          arch="${{ matrix.arch }}"
+          dir="$RUNNER_TEMP/frigate-image"
+          mkdir -p "$dir"
+          image="frigate:ci-$arch"
+          image_id="$(docker image inspect "$image" --format '{{.Id}}')"
+          printf 'sha=%s\narch=%s\nversion=%s\nimage_id=%s\n' \
+            "$GITHUB_SHA" "$arch" "$(cat release/VERSION)" "$image_id" \
+            > "$dir/build.txt"
+          docker save "$image" | zstd -T0 -6 -o "$dir/image.tar.zst"
+          (cd "$dir" && sha256sum image.tar.zst > image.tar.zst.sha256)
+      - name: Retain deployable image from successful main CI
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: frigate-image-${{ matrix.arch }}
+          path: ${{ runner.temp }}/frigate-image/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14

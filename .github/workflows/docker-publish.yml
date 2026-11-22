@@ -1,175 +1,197 @@
 # SPDX-License-Identifier: MIT
 # AI-assisted: OpenAI ChatGPT; maintainer review required.
-
-name: Publish Frigate HailoRT multi-architecture image
+# Publish only images exported by the successful main-branch CI run.
+name: Publish Frigate HailoRT verified images
 
 on:
-  push:
-    tags:
-      - 'frigate-hailort-v*'
+  workflow_dispatch:
+    inputs:
+      ci_run_id:
+        description: Successful main-branch Frigate HailoRT CI run ID
+        required: true
+        type: string
+      stage:
+        description: Publish RC from CI artifacts, or promote RC without rebuild
+        required: true
+        type: choice
+        options:
+          - rc
+          - stable
+      rc_number:
+        description: RC sequence number (default 1)
+        required: true
+        default: '1'
+        type: string
+      hardware_verified:
+        description: Confirm ARM64 hardware test before RC publication
+        required: true
+        type: boolean
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
-  group: frigate-docker-release-${{ github.ref }}
+  group: frigate-docker-release
   cancel-in-progress: false
 
 jobs:
   verify:
     runs-on: ubuntu-26.04
     timeout-minutes: 30
+    outputs:
+      version: ${{ steps.contract.outputs.version }}
+      rc_tag: ${{ steps.contract.outputs.rc_tag }}
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - name: Verify release tag and main ancestry
-        shell: bash
+      - name: Verify release and CI artifact contract
+        id: contract
         env:
           GH_TOKEN: ${{ github.token }}
+          CI_RUN: ${{ inputs.ci_run_id }}
+          STAGE: ${{ inputs.stage }}
+          RC_NUMBER: ${{ inputs.rc_number }}
+          HARDWARE_VERIFIED: ${{ inputs.hardware_verified }}
+        shell: bash
         run: |
           set -euo pipefail
-          expected="frigate-hailort-v$(cat release/VERSION)"
-          test "$GITHUB_REF_NAME" = "$expected"
-          test "$(git cat-file -t "refs/tags/$GITHUB_REF_NAME")" = tag
-          # GitHub verifies the tag signature. This supports both SSH and
-          # OpenPGP signatures without storing signing keys on runners.
-          tag_object="$(git rev-parse "refs/tags/$GITHUB_REF_NAME^{tag}")"
-          response="$(curl --fail --silent --show-error \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H 'Accept: application/vnd.github+json' \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/git/tags/$tag_object")"
-          printf '%s' "$response" | python3 -c '
-          import json
-          import sys
-          data = json.load(sys.stdin)
-          assert data.get("verification", {}).get("verified") is True, (
-              "Release tag signature is not verified by GitHub"
-          )'
+          [[ "$GITHUB_REF" == refs/heads/main ]]
+          [[ "$CI_RUN" =~ ^[0-9]+$ ]]
+          [[ "$RC_NUMBER" =~ ^[1-9][0-9]*$ ]]
+          [[ "$STAGE" == rc || "$STAGE" == stable ]]
           git fetch origin main
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
-          bash scripts/preflight-build.sh
+          [[ "$(git rev-parse HEAD)" == "$(git rev-parse origin/main)" ]]
+          version="$(cat release/VERSION)"
+          rc_tag="${version}-rc.${RC_NUMBER}"
+          run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CI_RUN")"
+          RUN_JSON="$run_json" python3 - <<'PY'
+          import json
+          import os
+          run = json.loads(os.environ['RUN_JSON'])
+          expected = {
+              'head_sha': os.environ['GITHUB_SHA'],
+              'head_branch': 'main',
+              'event': 'push',
+              'conclusion': 'success',
+              'name': 'Frigate HailoRT CI',
+          }
+          for field, value in expected.items():
+              if run.get(field) != value:
+                  raise SystemExit(
+                      f'FAIL: CI run {field} is {run.get(field)!r}, '
+                      f'expected {value!r}'
+                  )
+          print('PASS: CI run is successful main-branch build for this SHA')
+          PY
+          if [[ "$STAGE" == rc ]]; then
+            [[ "$HARDWARE_VERIFIED" == true ]] || {
+              echo 'FAIL: Hardware verification must be explicitly confirmed'
+              exit 1
+            }
+          else
+            tag="frigate-hailort-v${version}"
+            tag_sha="$(gh api \
+              "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" \
+              --jq '.object.sha')"
+            gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_sha" \
+              --jq '{verified: .verification.verified, type: .object.type, target: .object.sha}' |
+              TAG_TARGET="$GITHUB_SHA" python3 -c '
+          import json, os, sys
+          data = json.load(sys.stdin)
+          assert data["verified"] is True, "Unsigned release tag"
+          assert data["type"] == "commit", "Tag must target commit"
+          assert data["target"] == os.environ["TAG_TARGET"], "Tag SHA mismatch"
+          '
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "rc_tag=$rc_tag" >> "$GITHUB_OUTPUT"
+      - name: Preflight
+        run: bash scripts/preflight-build.sh
 
-  build:
+  rc:
+    if: inputs.stage == 'rc'
     needs: verify
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: amd64
-            runner: ubuntu-26.04
-          - arch: arm64
-            runner: ubuntu-26.04-arm
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 240
+    runs-on: ubuntu-26.04
+    timeout-minutes: 120
     environment: dockerhub-release
     steps:
       - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-      - name: Generate Frigate build version
-        shell: bash
-        run: |
-          bash scripts/preflight-build.sh
-          bash scripts/prepare-frigate-version.sh
-          bash scripts/check-build-context.sh
-      - name: Export pinned HailoRT source
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash scripts/prepare-hailort-source.sh \
-            "$RUNNER_TEMP/hailort-src"
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
         with:
           username: pmelendez2
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Build image locally for platform smoke test
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: ./docker/main/Dockerfile
-          target: frigate
-          platforms: linux/${{ matrix.arch }}
-          build-contexts: |
-            hailort-src=${{ runner.temp }}/hailort-src
-          load: true
-          push: false
-          tags: frigate:release-${{ matrix.arch }}
-          cache-from: type=gha,scope=frigate-${{ matrix.arch }}
-          cache-to: type=gha,scope=frigate-${{ matrix.arch }},mode=max
-      - name: Verify HailoRT runtime in image (no Hailo device)
-        shell: bash
-        run: |
-          bash scripts/test-ci-image.sh \
-            frigate:release-${{ matrix.arch }} \
-            ${{ matrix.arch }}
-      - name: Build and publish platform-specific digest
-        id: build
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: ./docker/main/Dockerfile
-          target: frigate
-          platforms: linux/${{ matrix.arch }}
-          build-contexts: |
-            hailort-src=${{ runner.temp }}/hailort-src
-          outputs: type=image,name=docker.io/pmelendez2/frigate,push-by-digest=true,name-canonical=true,push=true
-          provenance: mode=min
-          sbom: true
-          cache-from: type=gha,scope=frigate-${{ matrix.arch }}
-          cache-to: type=gha,scope=frigate-${{ matrix.arch }},mode=max
-      - name: Save digest for manifest assembly
-        shell: bash
+      - name: Fetch, verify, and load exactly the CI-built images
         env:
-          DIGEST: ${{ steps.build.outputs.digest }}
+          GH_TOKEN: ${{ github.token }}
+          CI_RUN: ${{ inputs.ci_run_id }}
+        shell: bash
         run: |
           set -euo pipefail
-          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
-          mkdir -p "$RUNNER_TEMP/digests"
-          touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: digests-${{ matrix.arch }}
-          path: ${{ runner.temp }}/digests/*
-          if-no-files-found: error
-          retention-days: 1
+          for arch in amd64 arm64; do
+            dir="$RUNNER_TEMP/frigate-$arch"
+            mkdir -p "$dir"
+            gh run download "$CI_RUN" \
+              --repo "$GITHUB_REPOSITORY" \
+              --name "frigate-image-$arch" \
+              --dir "$dir"
+            (cd "$dir" && sha256sum -c image.tar.zst.sha256)
+            grep -Fx "sha=$GITHUB_SHA" "$dir/build.txt"
+            grep -Fx "arch=$arch" "$dir/build.txt"
+            grep -Fx "version=$(cat release/VERSION)" "$dir/build.txt"
+            zstd -dc "$dir/image.tar.zst" | docker load
+            image="frigate:ci-$arch"
+            actual="$(docker image inspect "$image" \
+              --format '{{.Architecture}}')"
+            [[ "$actual" == "$arch" ]]
+            image_id="$(docker image inspect "$image" \
+              --format '{{.Id}}')"
+            grep -Fx "image_id=$image_id" "$dir/build.txt"
+            bash scripts/test-ci-image.sh "$image" "$arch"
+          done
+      - name: Publish immutable platform tags then RC manifest
+        env:
+          RC_TAG: ${{ needs.verify.outputs.rc_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          image=docker.io/pmelendez2/frigate
+          for arch in amd64 arm64; do
+            docker tag "frigate:ci-$arch" "$image:$RC_TAG-$arch"
+            docker push "$image:$RC_TAG-$arch"
+          done
+          docker buildx imagetools create \
+            -t "$image:$RC_TAG" \
+            "$image:$RC_TAG-amd64" \
+            "$image:$RC_TAG-arm64"
+          bash scripts/verify-published-image.sh "$image:$RC_TAG"
 
-  publish:
-    needs: build
+  stable:
+    if: inputs.stage == 'stable'
+    needs: verify
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     environment: dockerhub-release
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: digests-*
-          path: ${{ runner.temp }}/digests
-          merge-multiple: true
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
         with:
           username: pmelendez2
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Publish verified multi-platform manifest
+      - name: Promote RC manifest without rebuilding
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+          RC_TAG: ${{ needs.verify.outputs.rc_tag }}
         shell: bash
         run: |
           set -euo pipefail
           image=docker.io/pmelendez2/frigate
-          version="$(cat release/VERSION)"
-          mapfile -t hashes < <(
-            find "$RUNNER_TEMP/digests" -maxdepth 1 -type f \
-              -printf '%f\n' | sort
-          )
-          test "${#hashes[@]}" -eq 2
-          refs=()
-          for hash in "${hashes[@]}"; do
-            [[ "$hash" =~ ^[0-9a-f]{64}$ ]]
-            refs+=("$image@sha256:$hash")
-          done
+          bash scripts/verify-published-image.sh "$image:$RC_TAG"
           docker buildx imagetools create \
-            -t "$image:$version" \
-            -t "$image:sha-${GITHUB_SHA:0:12}" \
-            "${refs[@]}"
-          bash scripts/verify-published-image.sh "$image:$version"
+            -t "$image:$VERSION" \
+            "$image:$RC_TAG"
+          bash scripts/verify-published-image.sh "$image:$VERSION"
+          echo 'PASS: Stable tag points to promoted RC; no build performed'
