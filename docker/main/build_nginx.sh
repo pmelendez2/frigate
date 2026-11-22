@@ -35,17 +35,27 @@ tar -zxf ${VOD_MODULE_VERSION}.tar.gz -C /tmp/nginx-vod-module --strip-component
 rm ${VOD_MODULE_VERSION}.tar.gz
     # Patch MAX_CLIPS to allow more clips to be added than the default 128
 sed -i 's/MAX_CLIPS (128)/MAX_CLIPS (1080)/g' /tmp/nginx-vod-module/vod/media_set.h
-patch -d /tmp/nginx-vod-module/ -p1 << 'EOF'
---- a/vod/avc_hevc_parser.c
-+++ b/vod/avc_hevc_parser.c
-@@ -2,2 +2,5 @@
- bool_t
- avc_hevc_parser_rbsp_trailing_bits(bit_reader_state_t* reader) {
-+	// https://github.com/blakeblackshear/frigate/issues/4572
-+	return TRUE;
-+
+# Apply the VOD compatibility fix inside the function body.
+vod_parser="/tmp/nginx-vod-module/vod/avc_hevc_parser.c"
+signature='avc_hevc_parser_rbsp_trailing_bits(bit_reader_state_t* reader) {'
 
-EOF
+test "$(grep -Fxc "$signature" "$vod_parser")" -eq 1
+
+vod_tmp="$(mktemp)"
+awk '
+    /^avc_hevc_parser_rbsp_trailing_bits\(bit_reader_state_t\* reader\) \{$/ {
+        print
+        print "\t// Frigate VOD parser compatibility fix"
+        print "\treturn TRUE;"
+        next
+    }
+    { print }
+' "$vod_parser" > "$vod_tmp"
+
+cat "$vod_tmp" > "$vod_parser"
+rm -f -- "$vod_tmp"
+
+grep -F -A 3 "$signature" "$vod_parser"
 
 
 mkdir /tmp/ngx_devel_kit
