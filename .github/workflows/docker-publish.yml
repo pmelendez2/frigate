@@ -44,7 +44,8 @@ jobs:
       rc_tag: ${{ steps.contract.outputs.rc_tag }}
       ci_sha: ${{ steps.contract.outputs.ci_sha }}
     steps:
-      - uses: actions/checkout@v5
+      - name: Check out release source
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - name: Verify release and CI artifact contract
@@ -188,7 +189,7 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "rc_tag=$rc_tag" >> "$GITHUB_OUTPUT"
-      - name: Preflight
+      - name: Run security, privacy and build preflight
         run: bash scripts/preflight-build.sh
       - name: Verify current-release documentation versions
         shell: bash
@@ -219,6 +220,26 @@ jobs:
           print("PASS: current-release documentation versions")
           PY
 
+      - name: Clearly report release verification results
+        env:
+          CI_RUN: ${{ inputs.ci_run_id }}
+          CI_SHA: ${{ steps.contract.outputs.ci_sha }}
+          VERSION: ${{ steps.contract.outputs.version }}
+          STAGE: ${{ inputs.stage }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo '## Frigate release verification'
+            echo ''
+            echo "- Source CI run: \`$CI_RUN\`"
+            echo "- Verified source commit: \`$CI_SHA\`"
+            echo "- Release version: \`$VERSION\`"
+            echo "- Publication stage: \`$STAGE\`"
+            echo '- Original CI images are reused; no builds are performed'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::notice::Release contract verified for $VERSION ($STAGE)"
+
   rc:
     if: inputs.stage == 'rc'
     needs: verify
@@ -226,60 +247,185 @@ jobs:
     timeout-minutes: 120
     environment: dockerhub-release
     steps:
-      - uses: actions/checkout@v5
-      - uses: docker/setup-qemu-action@v3
+      - name: Check out release source
+        uses: actions/checkout@v5
+      - name: Enable ARM64 emulation for software checks
+        uses: docker/setup-qemu-action@v3
         with:
           platforms: arm64
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/login-action@v4
+      - name: Configure Docker Buildx for manifest creation
+        uses: docker/setup-buildx-action@v4
+      - name: Check Docker Hub token is configured
+        env:
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        shell: bash
+        run: |
+          if [[ -z "$DOCKERHUB_TOKEN" ]]; then
+            echo '::error::DOCKERHUB_TOKEN is not configured'
+            exit 1
+          fi
+          echo '::notice::Docker Hub token exists (value hidden)'
+      - name: Authenticate to Docker Hub
+        uses: docker/login-action@v4
         with:
           username: pmelendez2
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Fetch, verify, and load exactly the CI-built images
+      - name: Start RC publication summary
+        env:
+          RC_TAG: ${{ needs.verify.outputs.rc_tag }}
+          CI_RUN: ${{ inputs.ci_run_id }}
+        run: |
+          {
+            echo '## Frigate Docker Hub RC publication'
+            echo ''
+            echo "- RC tag: \`$RC_TAG\`"
+            echo "- Source CI run: \`$CI_RUN\`"
+            echo '- Image builds: **none** (original CI artifacts reused)'
+            echo ''
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Verify and load amd64 image from original CI
         env:
           GH_TOKEN: ${{ github.token }}
           CI_RUN: ${{ inputs.ci_run_id }}
           CI_SHA: ${{ needs.verify.outputs.ci_sha }}
+          ARCH: amd64
         shell: bash
         run: |
           set -euo pipefail
-          for arch in amd64 arm64; do
-            dir="$RUNNER_TEMP/frigate-$arch"
-            mkdir -p "$dir"
-            gh run download "$CI_RUN" \
-              --repo "$GITHUB_REPOSITORY" \
-              --name "frigate-image-$arch" \
-              --dir "$dir"
-            (cd "$dir" && sha256sum -c image.tar.zst.sha256)
-            grep -Fx "sha=$CI_SHA" "$dir/build.txt"
-            grep -Fx "arch=$arch" "$dir/build.txt"
-            grep -Fx "version=$(cat release/VERSION)" "$dir/build.txt"
-            zstd -dc "$dir/image.tar.zst" | docker load
-            image="frigate:ci-$arch"
-            actual="$(docker image inspect "$image" \
-              --format '{{.Architecture}}')"
-            [[ "$actual" == "$arch" ]]
-            image_id="$(docker image inspect "$image" \
-              --format '{{.Id}}')"
-            grep -Fx "image_id=$image_id" "$dir/build.txt"
-            bash scripts/test-ci-image.sh "$image" "$arch"
-          done
-      - name: Publish immutable platform tags then RC manifest
+          echo "::notice::Checking existing $ARCH image from CI run $CI_RUN"
+          dir="$RUNNER_TEMP/frigate-$ARCH"
+          mkdir -p "$dir"
+          echo "::group::Download $ARCH CI artifact"
+          gh run download "$CI_RUN" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "frigate-image-$ARCH" \
+            --dir "$dir"
+          echo '::endgroup::'
+          echo "::group::Verify $ARCH artifact provenance and checksum"
+          (cd "$dir" && sha256sum -c image.tar.zst.sha256)
+          grep -Fx "sha=$CI_SHA" "$dir/build.txt"
+          grep -Fx "arch=$ARCH" "$dir/build.txt"
+          grep -Fx "version=$(cat release/VERSION)" "$dir/build.txt"
+          echo '::endgroup::'
+          echo "::group::Load the existing $ARCH image without rebuilding"
+          zstd -dc "$dir/image.tar.zst" | docker load
+          image="frigate:ci-$ARCH"
+          actual="$(docker image inspect "$image" \
+            --format '{{.Architecture}}')"
+          [[ "$actual" == "$ARCH" ]]
+          image_id="$(docker image inspect "$image" \
+            --format '{{.Id}}')"
+          grep -Fx "image_id=$image_id" "$dir/build.txt"
+          echo "Verified image ID: $image_id"
+          echo '::endgroup::'
+          echo "::group::Run $ARCH software smoke tests"
+          bash scripts/test-ci-image.sh "$image" "$ARCH"
+          echo '::endgroup::'
+          echo "::notice::PASS: $ARCH artifact and smoke tests"
+          {
+            echo "- ✅ $ARCH: existing CI image verified and smoke tested"
+            echo "  (image ID: \`$image_id\`)"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Verify and load arm64 image from original CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_RUN: ${{ inputs.ci_run_id }}
+          CI_SHA: ${{ needs.verify.outputs.ci_sha }}
+          ARCH: arm64
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::notice::Checking existing $ARCH image from CI run $CI_RUN"
+          dir="$RUNNER_TEMP/frigate-$ARCH"
+          mkdir -p "$dir"
+          echo "::group::Download $ARCH CI artifact"
+          gh run download "$CI_RUN" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "frigate-image-$ARCH" \
+            --dir "$dir"
+          echo '::endgroup::'
+          echo "::group::Verify $ARCH artifact provenance and checksum"
+          (cd "$dir" && sha256sum -c image.tar.zst.sha256)
+          grep -Fx "sha=$CI_SHA" "$dir/build.txt"
+          grep -Fx "arch=$ARCH" "$dir/build.txt"
+          grep -Fx "version=$(cat release/VERSION)" "$dir/build.txt"
+          echo '::endgroup::'
+          echo "::group::Load the existing $ARCH image without rebuilding"
+          zstd -dc "$dir/image.tar.zst" | docker load
+          image="frigate:ci-$ARCH"
+          actual="$(docker image inspect "$image" \
+            --format '{{.Architecture}}')"
+          [[ "$actual" == "$ARCH" ]]
+          image_id="$(docker image inspect "$image" \
+            --format '{{.Id}}')"
+          grep -Fx "image_id=$image_id" "$dir/build.txt"
+          echo "Verified image ID: $image_id"
+          echo '::endgroup::'
+          echo "::group::Run $ARCH software smoke tests"
+          bash scripts/test-ci-image.sh "$image" "$ARCH"
+          echo '::endgroup::'
+          echo "::notice::PASS: $ARCH artifact and smoke tests"
+          {
+            echo "- ✅ $ARCH: existing CI image verified and smoke tested"
+            echo "  (image ID: \`$image_id\`)"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Push verified amd64 image to Docker Hub
+        env:
+          RC_TAG: ${{ needs.verify.outputs.rc_tag }}
+          ARCH: amd64
+        shell: bash
+        run: |
+          set -euo pipefail
+          image=docker.io/pmelendez2/frigate
+          tag="$image:$RC_TAG-$ARCH"
+          echo "::notice::Publishing existing $ARCH image as $tag"
+          docker tag "frigate:ci-$ARCH" "$tag"
+          docker push "$tag"
+          echo "::notice::PASS: Published $tag"
+          echo "- ✅ Published \`$tag\`" >> "$GITHUB_STEP_SUMMARY"
+      - name: Push verified arm64 image to Docker Hub
+        env:
+          RC_TAG: ${{ needs.verify.outputs.rc_tag }}
+          ARCH: arm64
+        shell: bash
+        run: |
+          set -euo pipefail
+          image=docker.io/pmelendez2/frigate
+          tag="$image:$RC_TAG-$ARCH"
+          echo "::notice::Publishing existing $ARCH image as $tag"
+          docker tag "frigate:ci-$ARCH" "$tag"
+          docker push "$tag"
+          echo "::notice::PASS: Published $tag"
+          echo "- ✅ Published \`$tag\`" >> "$GITHUB_STEP_SUMMARY"
+      - name: Create and verify the multiarchitecture RC manifest
         env:
           RC_TAG: ${{ needs.verify.outputs.rc_tag }}
         shell: bash
         run: |
           set -euo pipefail
           image=docker.io/pmelendez2/frigate
-          for arch in amd64 arm64; do
-            docker tag "frigate:ci-$arch" "$image:$RC_TAG-$arch"
-            docker push "$image:$RC_TAG-$arch"
-          done
+          tag="$image:$RC_TAG"
+          echo "::notice::Creating multiarchitecture manifest for $tag"
           docker buildx imagetools create \
-            -t "$image:$RC_TAG" \
+            -t "$tag" \
             "$image:$RC_TAG-amd64" \
             "$image:$RC_TAG-arm64"
-          bash scripts/verify-published-image.sh "$image:$RC_TAG"
+          bash scripts/verify-published-image.sh "$tag"
+          digest="$(docker buildx imagetools inspect "$tag" |
+            awk '/^Digest:/ {print $2; exit}')"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+            echo '::error::Could not obtain published manifest digest'
+            exit 1
+          }
+          echo "::notice::Published $tag with digest $digest"
+          {
+            echo ''
+            echo '### RC publication successful'
+            echo "- Docker Hub image: \`$tag\`"
+            echo '- Platforms: `linux/amd64`, `linux/arm64`'
+            echo "- Manifest digest: \`$digest\`"
+            echo '- Image builds: **none**'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   stable:
     if: inputs.stage == 'stable'
@@ -288,13 +434,35 @@ jobs:
     timeout-minutes: 30
     environment: dockerhub-release
     steps:
-      - uses: actions/checkout@v5
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/login-action@v4
+      - name: Check out release source
+        uses: actions/checkout@v5
+      - name: Configure Docker Buildx for manifest promotion
+        uses: docker/setup-buildx-action@v4
+      - name: Check Docker Hub token is configured
+        env:
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        shell: bash
+        run: |
+          if [[ -z "$DOCKERHUB_TOKEN" ]]; then
+            echo '::error::DOCKERHUB_TOKEN is not configured'
+            exit 1
+          fi
+          echo '::notice::Docker Hub token exists (value hidden)'
+      - name: Authenticate to Docker Hub
+        uses: docker/login-action@v4
         with:
           username: pmelendez2
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Promote RC manifest without rebuilding
+      - name: Verify the published RC manifest before promotion
+        env:
+          RC_TAG: ${{ needs.verify.outputs.rc_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          image=docker.io/pmelendez2/frigate
+          echo "::notice::Checking existing RC manifest $image:$RC_TAG"
+          bash scripts/verify-published-image.sh "$image:$RC_TAG"
+      - name: Promote verified RC to stable without rebuilding
         env:
           VERSION: ${{ needs.verify.outputs.version }}
           RC_TAG: ${{ needs.verify.outputs.rc_tag }}
@@ -302,9 +470,34 @@ jobs:
         run: |
           set -euo pipefail
           image=docker.io/pmelendez2/frigate
-          bash scripts/verify-published-image.sh "$image:$RC_TAG"
+          echo "::notice::Promoting $image:$RC_TAG to $image:$VERSION"
           docker buildx imagetools create \
             -t "$image:$VERSION" \
             "$image:$RC_TAG"
-          bash scripts/verify-published-image.sh "$image:$VERSION"
-          echo 'PASS: Stable tag points to promoted RC; no build performed'
+          echo '::notice::Stable promotion completed without image rebuild'
+      - name: Verify published stable manifest and report digest
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+          RC_TAG: ${{ needs.verify.outputs.rc_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          image=docker.io/pmelendez2/frigate
+          tag="$image:$VERSION"
+          bash scripts/verify-published-image.sh "$tag"
+          digest="$(docker buildx imagetools inspect "$tag" |
+            awk '/^Digest:/ {print $2; exit}')"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+            echo '::error::Could not obtain stable manifest digest'
+            exit 1
+          }
+          {
+            echo '## Frigate Docker Hub stable publication'
+            echo ''
+            echo "- Stable tag: \`$tag\`"
+            echo "- Promoted from: \`$image:$RC_TAG\`"
+            echo '- Platforms: `linux/amd64`, `linux/arm64`'
+            echo "- Manifest digest: \`$digest\`"
+            echo '- Image builds: **none** (RC manifest promoted)'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::notice::PASS: Stable $tag published, digest $digest"
