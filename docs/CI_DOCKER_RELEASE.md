@@ -148,9 +148,12 @@ changes and remain responsible for signing and publishing releases.
 
 For the HailoRT 4.24.0 fork, the authoritative release procedure is
 `docs/BUILD_ONCE_RELEASE.md`: successful `main` CI exports AMD64/ARM64
-images, the ARM64 image is checked on physical Hailo hardware, then
-`docker-publish.yml` is dispatched for RC publication. Stable promotion
-uses a verified signed annotated tag and reuses the RC manifest without
-rebuilding. Do **not** rely on older tag-triggered publication instructions
-for this release. Hardware-aware automation remains tracked in
+images; `docker-publish.yml` publishes an RC from those artifacts, then
+the **published RC** undergoes final hardware acceptance. Release
+notes and versioned installation instructions are completed in a
+documentation-only PR. Stable promotion requires an explicitly verified
+signed annotated tag and reuses the RC manifest **without rebuilding**.
+See `docs/BUILD_ONCE_RELEASE.md` and the version-specific notes in
+`docs/releases/0.18.3-hailort-4.24.0.md`. Do **not** use older tag-triggered
+publication instructions. Hardware-aware automation is tracked in
 [issue #5](https://github.com/pmelendez2/frigate/issues/5).
