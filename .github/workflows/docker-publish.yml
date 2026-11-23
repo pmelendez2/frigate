@@ -104,7 +104,9 @@ jobs:
                 docs/INSTALL_HAILORT_4.24.md|\
                 docs/BUILD_ONCE_RELEASE.md|\
                 docs/CI_DOCKER_RELEASE.md|\
-                HAILO8.md)
+                HAILO8.md|\
+                CHANGELOG.md|\
+                docs/releases/0.18.3-hailort-4.24.0.md)
                   echo "Allowed release-only change: $changed" ;;
                 *)
                   echo "FAIL: CI image is stale after change: $changed"
@@ -114,12 +116,62 @@ jobs:
           fi
           echo "PASS: CI commit $ci_sha is verified for release main"
           echo "ci_sha=$ci_sha" >> "$GITHUB_OUTPUT"
-          if [[ "$STAGE" == rc ]]; then
-            [[ "$HARDWARE_VERIFIED" == true ]] || {
-              echo 'FAIL: Hardware verification must be explicitly confirmed'
-              exit 1
-            }
+          [[ "$HARDWARE_VERIFIED" == true ]] || {
+            echo 'FAIL: Hardware verification must be explicitly confirmed'
+            exit 1
+          }
+          if [[ "$STAGE" == stable ]]; then
+            RELEASE_VERSION="$version" python3 - <<'PY'
+          import os
+          import pathlib
+          import re
+          version = os.environ["RELEASE_VERSION"]
+          notes = pathlib.Path(f"docs/releases/{version}.md")
+          if not notes.is_file():
+              raise SystemExit("FAIL: versioned release notes are missing")
+          body = notes.read_text(encoding="utf-8")
+          required = ("## Fixed issues", "## Known limitations",
+                      "## Final hardware acceptance")
+          for heading in required:
+              if heading not in body:
+                  raise SystemExit(f"FAIL: missing release notes {heading}")
+          def acceptance_value(label):
+              pattern = (
+                  r"(?m)^\|\s*" + re.escape(label) +
+                  r"\s*\|\s*([^|\n]+?)\s*\|\s*$"
+              )
+              matches = re.findall(pattern, body)
+              if len(matches) != 1:
+                  raise SystemExit(
+                      f"FAIL: missing/duplicate acceptance row: {label}"
+                  )
+              return matches[0].strip()
+          if acceptance_value("Status") != "ACCEPTED":
+              raise SystemExit("FAIL: RC hardware acceptance not recorded")
+          digest = acceptance_value("RC ARM64 digest")
+          if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+              raise SystemExit("FAIL: hardware-tested RC digest missing")
+          for label in (
+              "Hardware test date",
+              "Hardware/OS/kernel",
+              "Host driver/runtime",
+              "Frigate camera inference",
+              "Second MPS client using group `SHARED`",
+              "RC identity and rollback verification",
+          ):
+              value = acceptance_value(label)
+              if not value or "PENDING" in value.upper():
+                  raise SystemExit(f"FAIL: incomplete acceptance: {label}")
+          if "Stable documentation: APPROVED" not in body:
+              raise SystemExit("FAIL: stable documentation not approved")
+          if version not in body:
+              raise SystemExit("FAIL: release version missing in notes")
+          print("PASS: documented RC hardware and stable approval")
+          PY
           else
+            echo "PASS: RC hardware attestation recorded by dispatcher"
+          fi
+          if [[ "$STAGE" == stable ]]; then
             tag="frigate-hailort-v${version}"
             tag_sha="$(gh api \
               "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" \
@@ -138,6 +190,34 @@ jobs:
           echo "rc_tag=$rc_tag" >> "$GITHUB_OUTPUT"
       - name: Preflight
         run: bash scripts/preflight-build.sh
+      - name: Verify current-release documentation versions
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          version = Path("release/VERSION").read_text().strip()
+          notes = Path(f"docs/releases/{version}.md")
+          required = (Path("CHANGELOG.md"), notes)
+          for path in required:
+              if not path.is_file():
+                  raise SystemExit(f"FAIL: missing {path}")
+              if version not in path.read_text():
+                  raise SystemExit(f"FAIL: wrong version in {path}")
+          current = ("docs/INSTALL_HAILORT_4.24.md",
+                     "docs/BUILD_ONCE_RELEASE.md",
+                     "docs/CI_DOCKER_RELEASE.md")
+          for name in current:
+              body = Path(name).read_text()
+              if "0.18.2-hailort-4.24-mps" in body:
+                  raise SystemExit(f"FAIL: stale tag example in {name}")
+              for tag in re.findall(
+                  r"(?:docker\.io/pmelendez2/)?frigate:(0\.18\.\d+"
+                  r"-hailort-4\.24\.0(?:-rc\.\d+)?)", body):
+                  if tag != version and not tag.startswith(version + "-rc."):
+                      raise SystemExit(f"FAIL: mismatched {tag} in {name}")
+          print("PASS: current-release documentation versions")
+          PY
 
   rc:
     if: inputs.stage == 'rc'

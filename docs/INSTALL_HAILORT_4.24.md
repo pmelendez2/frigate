@@ -329,7 +329,7 @@ docker buildx build \
     --build-context "hailort-src=$HAILORT_CONTEXT/hailort-src" \
     --target frigate \
     --file docker/main/Dockerfile \
-    --tag frigate:0.18.2-hailort-4.24-mps \
+    --tag docker.io/pmelendez2/frigate:0.18.3-hailort-4.24.0 \
     --load \
     .
 ```
@@ -343,10 +343,10 @@ of building ARM64 images (natively or with configured emulation).
 Check the resulting local image:
 
 ```bash
-docker image inspect frigate:0.18.2-hailort-4.24-mps \
+docker image inspect docker.io/pmelendez2/frigate:0.18.3-hailort-4.24.0 \
     --format '{{.Architecture}}'
 docker run --rm --entrypoint hailortcli \
-    frigate:0.18.2-hailort-4.24-mps --version
+    docker.io/pmelendez2/frigate:0.18.3-hailort-4.24.0 --version
 ```
 
 Expect `arm64` and HailoRT CLI 4.24.0. These tests alone do **not** prove that
@@ -368,7 +368,7 @@ complete Frigate Compose file:
 ```yaml
 services:
   frigate:
-    image: frigate:0.18.2-hailort-4.24-mps
+    image: docker.io/pmelendez2/frigate:0.18.3-hailort-4.24.0
     devices:
       - /dev/hailo0:/dev/hailo0
     volumes:
